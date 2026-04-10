@@ -127,6 +127,10 @@ function toTSV(records) {
   return [header, ...rows].join("\n");
 }
 
+// ── Config ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://mlawmxukpdwbvfkvrhqk.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sYXdteHVrcGR3YnZma3ZyaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTI4MDgsImV4cCI6MjA5MTMyODgwOH0.pJABHykJW2fbJdhS_D5bc2kjv02EwQeacuWJX0_u16A";
+
 // ── Custom Tooltip ─────────────────────────────────────────────────────
 function CustomBarTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -159,16 +163,59 @@ function StatCard({ label, value, sub, accent }) {
   );
 }
 
+// ── Email summary builder ──────────────────────────────────────────────
+function buildEmailSummary(records, qData, archetypeData, avgGenZ) {
+  const top = [...archetypeData].sort((a,b) => b.value - a.value);
+  const bar = (pct) => {
+    const filled = Math.round(pct / 5);
+    return "█".repeat(filled) + "░".repeat(20 - filled) + ` ${pct}%`;
+  };
+  const date = new Date().toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric" });
+
+  let txt = `MILLENNIAL VS GEN Z — OFFICE SURVEY RESULTS\n`;
+  txt += `${"=".repeat(46)}\n`;
+  txt += `Published: ${date}  |  Total responses: ${records.length}\n\n`;
+
+  txt += `HEADLINE\n${"─".repeat(20)}\n`;
+  txt += `Average Gen Z score: ${avgGenZ}%\n`;
+  txt += `Most common archetype: ${top[0]?.name || "—"} (${top[0]?.value || 0} respondents)\n\n`;
+
+  txt += `ARCHETYPE BREAKDOWN\n${"─".repeat(20)}\n`;
+  top.forEach(a => {
+    if (a.value > 0) {
+      const pct = Math.round((a.value / records.length) * 100);
+      txt += `${a.name.padEnd(22)} ${bar(pct)}\n`;
+    }
+  });
+  txt += `\n`;
+
+  txt += `GEN Z LEAN BY TOPIC (0% = fully Millennial, 100% = fully Gen Z)\n${"─".repeat(46)}\n`;
+  qData.forEach((q, i) => {
+    const genzLean = q.genzPct;
+    txt += `Q${String(i+1).padStart(2,"0")} ${q.tag.padEnd(16)} ${bar(genzLean)}\n`;
+  });
+  txt += `\n`;
+
+  txt += `MOST POLARISING QUESTIONS\n${"─".repeat(26)}\n`;
+  const sorted = [...qData].sort((a,b) => Math.abs(b.genzPct - b.milPct) - Math.abs(a.genzPct - a.milPct));
+  sorted.slice(0,3).forEach((q,i) => {
+    txt += `${i+1}. ${q.short}\n`;
+    txt += `   Millennial: ${q.milPct}%  |  Mixed: ${q.midPct}%  |  Gen Z: ${q.genzPct}%\n\n`;
+  });
+
+  txt += `${"=".repeat(46)}\n`;
+  txt += `Results are aggregate and anonymous. Generated from genz-survey.netlify.app\n`;
+  return txt;
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────
 export default function Dashboard() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [tab, setTab] = useState("overview"); // overview | questions | raw
+  const [tab, setTab] = useState("overview");
+  const [copied, setCopied] = useState(false);
 
-  const SUPABASE_URL = "https://mlawmxukpdwbvfkvrhqk.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sYXdteHVrcGR3YnZma3ZyaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTI4MDgsImV4cCI6MjA5MTMyODgwOH0.pJABHykJW2fbJdhS_D5bc2kjv02EwQeacuWJX0_u16A";
-  
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -179,14 +226,14 @@ export default function Dashboard() {
         },
       });
       const data = await res.json();
-      const records = data.map(r => ({
+      const parsed = (Array.isArray(data) ? data : []).map(r => ({
         ts: r.ts,
         totalScore: r.total_score,
         pctGenZ: r.pct_genz,
         archetype: r.archetype,
         answers: r.answers,
       }));
-      setRecords(records);
+      setRecords(parsed);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (e) {
       console.warn("Load failed:", e);
@@ -212,6 +259,14 @@ export default function Dashboard() {
     const a = document.createElement("a");
     a.href = url; a.download = "survey_responses.tsv"; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function copyEmailSummary() {
+    const summary = buildEmailSummary(records, qData, archetypeData, avgGenZ);
+    navigator.clipboard.writeText(summary).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
   }
 
   return (
@@ -266,7 +321,12 @@ export default function Dashboard() {
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button className="tab-btn" onClick={load} title="Refresh">↻ Refresh</button>
-              <button className="dl-btn" onClick={downloadTSV} disabled={!records.length}>
+              <button className="dl-btn" onClick={copyEmailSummary} disabled={!records.length}
+                style={{ background: copied ? "#D4F7A0" : C.genz }}>
+                {copied ? "✓ Copied!" : "✉ Copy for email"}
+              </button>
+              <button className="dl-btn" onClick={downloadTSV} disabled={!records.length}
+                style={{ background: C.milLight, color: C.ink }}>
                 ↓ Download TSV
               </button>
             </div>
