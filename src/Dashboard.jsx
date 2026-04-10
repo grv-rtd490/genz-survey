@@ -166,19 +166,27 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [tab, setTab] = useState("overview"); // overview | questions | raw
 
+  const SUPABASE_URL = "https://mlawmxukpdwbvfkvrhqk.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sYXdteHVrcGR3YnZma3ZyaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTI4MDgsImV4cCI6MjA5MTMyODgwOH0.pJABHykJW2fbJdhS_D5bc2kjv02EwQeacuWJX0_u16A";
+  
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const listed = await window.storage.list("response:", true);
-      const keys = listed?.keys || [];
-      const rawMap = {};
-      await Promise.all(keys.map(async key => {
-        try {
-          const res = await window.storage.get(key, true);
-          if (res?.value) rawMap[key] = res.value;
-        } catch (_) {}
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/responses?select=*&order=ts.asc`, {
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+      const data = await res.json();
+      const records = data.map(r => ({
+        ts: r.ts,
+        totalScore: r.total_score,
+        pctGenZ: r.pct_genz,
+        archetype: r.archetype,
+        answers: r.answers,
       }));
-      setRecords(parseRecords(rawMap));
+      setRecords(records);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (e) {
       console.warn("Load failed:", e);

@@ -521,6 +521,9 @@ export default function App() {
   }
 
   // ── Save response to shared storage ───────────────────────────────────
+  const SUPABASE_URL = "https://mlawmxukpdwbvfkvrhqk.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sYXdteHVrcGR3YnZma3ZyaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTI4MDgsImV4cCI6MjA5MTMyODgwOH0.pJABHykJW2fbJdhS_D5bc2kjv02EwQeacuWJX0_u16A";
+  
   async function saveResponse(finalAnswers) {
     try {
       const ts = Date.now();
@@ -528,20 +531,25 @@ export default function App() {
       const max = QUESTIONS.length * 2;
       const pct = Math.round((score / max) * 100);
       const res = getResult(score);
-      // Each record: tab-delimited fields stored under a unique key
-      // Fields: timestamp, totalScore, pctGenZ, archetype, Q1..Q12 (0/1/2)
-      const record = {
-        ts,
-        totalScore: score,
-        pctGenZ: pct,
-        archetype: res.archetype,
-        answers: finalAnswers, // array of 12 values (0=Mil,1=Mix,2=GenZ)
-      };
-      const key = `response:${ts}`;
-      await window.storage.set(key, JSON.stringify(record), true); // shared=true
+  
+      await fetch(`${SUPABASE_URL}/rest/v1/responses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({
+          ts,
+          total_score: score,
+          pct_genz: pct,
+          archetype: res.archetype,
+          answers: finalAnswers,
+        }),
+      });
     } catch (e) {
-      // silent fail — never block UX for analytics
-      console.warn("Storage save failed:", e);
+      console.warn("Save failed:", e);
     }
   }
 
